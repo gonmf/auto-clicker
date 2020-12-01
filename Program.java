@@ -20,6 +20,9 @@ public class Program{
   private TextField tValueY;
   private TextField tInterval;
   private Robot robo;
+  private Object lock = new Object();
+  private boolean mouseListenerEnabled = false;
+  private boolean mouseRobotEnabled = false;
 
   private void prepareGUI() {
     try {
@@ -78,13 +81,18 @@ public class Program{
     return val > 99 ? val / 10 * 10 : val;
   }
 
-  private Thread activeMouseMotionListener;
   private void launchActiveMouseListener() {
-    activeMouseMotionListener = new Thread(new Runnable() {
+    if (mouseListenerEnabled) return;
+
+    mouseListenerEnabled = true;
+
+    Thread activeMouseMotionListener = new Thread(new Runnable() {
       @Override
       public void run() {
         try{
           while (true) {
+            if (!mouseListenerEnabled) return;
+
             Point p = MouseInfo.getPointerInfo().getLocation();
             lCurrValueX.setText("X: " + p.x);
             lCurrValueY.setText("Y: " + p.y);
@@ -96,8 +104,6 @@ public class Program{
     activeMouseMotionListener.start();
   }
 
-
-  private Thread tSimul;
   private class StartListener implements ActionListener{
     @Override
     public void actionPerformed(ActionEvent ae) {
@@ -122,63 +128,68 @@ public class Program{
         return;
       }
 
-      bStart.setEnabled(false);
-      lCurrValueX.setEnabled(false);
-      lCurrValueY.setEnabled(false);
-      tValueX.setEnabled(false);
-      tValueY.setEnabled(false);
-      tInterval.setEnabled(false);
+      synchronized(lock) {
+        if (!bStart.isEnabled()) return;
 
-      if (activeMouseMotionListener != null) {
-        activeMouseMotionListener.interrupt();
-        activeMouseMotionListener = null;
+        bStart.setEnabled(false);
+        lCurrValueX.setEnabled(false);
+        lCurrValueY.setEnabled(false);
+        tValueX.setEnabled(false);
+        tValueY.setEnabled(false);
+        tInterval.setEnabled(false);
+
+        mouseListenerEnabled = false;
+        mouseRobotEnabled = true;
+
+        Thread tSimul = new Thread(new Runnable() {
+          @Override
+          public void run() {
+            try{
+              while(true) {
+                if (!mouseRobotEnabled) return;
+
+                Point pev = MouseInfo.getPointerInfo().getLocation();
+                if (pev.x != x && pev.y != y) {
+                  robo.mouseMove(x, y);
+                }
+                robo.mousePress(InputEvent.BUTTON1_MASK);
+                robo.mouseRelease(InputEvent.BUTTON1_MASK);
+                if (pev.x != x && pev.y != y) {
+                  robo.mouseMove(pev.x, pev.y);
+                }
+                Thread.sleep(interval);
+              }
+            }catch(Exception e) {}
+          }
+        });
+        tSimul.start();
+
+        robo.mouseMove(x, y);
+
+        bStop.setEnabled(true);
       }
-
-      tSimul = new Thread(new Runnable() {
-        @Override
-        public void run() {
-          try{
-            while(true) {
-              Point pev = MouseInfo.getPointerInfo().getLocation();
-              if (pev.x != x && pev.y != y) {
-                robo.mouseMove(x, y);
-              }
-              robo.mousePress(InputEvent.BUTTON1_MASK);
-              robo.mouseRelease(InputEvent.BUTTON1_MASK);
-              if (pev.x != x && pev.y != y) {
-                robo.mouseMove(pev.x, pev.y);
-              }
-              Thread.sleep(interval);
-            }
-          }catch(Exception e) {}
-        }
-      });
-      tSimul.start();
-
-      robo.mouseMove(x, y);
-
-      bStop.setEnabled(true);
     }
   }
 
   private class StopListener implements ActionListener{
     @Override
     public void actionPerformed(ActionEvent ae) {
-      bStop.setEnabled(false);
+      synchronized(lock) {
+        if (!bStop.isEnabled()) return;
 
-      if (tSimul != null) {
-        tSimul.interrupt();
-        tSimul = null;
+        bStop.setEnabled(false);
+
+        mouseRobotEnabled = false;
+
+        launchActiveMouseListener();
+
+        lCurrValueX.setEnabled(true);
+        lCurrValueY.setEnabled(true);
+        tValueX.setEnabled(true);
+        tValueY.setEnabled(true);
+        tInterval.setEnabled(true);
+        bStart.setEnabled(true);
       }
-
-      launchActiveMouseListener();
-
-      bStart.setEnabled(true);
-      lCurrValueX.setEnabled(true);
-      lCurrValueY.setEnabled(true);
-      tValueX.setEnabled(true);
-      tValueY.setEnabled(true);
-      tInterval.setEnabled(true);
     }
   }
 }
